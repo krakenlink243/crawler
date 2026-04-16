@@ -1,12 +1,12 @@
 # Bước 1: Build file JAR (Dùng Maven)
 FROM maven:3.9.6-eclipse-temurin-21-alpine AS build
-WORKDIR /worker
+WORKDIR /app
 COPY . .
 RUN mvn clean package -DskipTests -Dstart-class=com.example.worker.WorkerApplication
 
 
 FROM eclipse-temurin:21-jre-alpine
-WORKDIR /worker
-COPY --from=build /worker/target/*.jar app.ja
+WORKDIR /app
+COPY --from=build /app/target/*.jar app.ja
 ENTRYPOINT ["java", "-jar", "app.jar"]
 EXPOSE 8080
