@@ -44,8 +44,7 @@ jobs:
         ECR_REPOSITORY: worker # Tên repo bạn tạo trên ECR
         IMAGE_TAG: latest
       run: |
-        cd worker
-        docker build -f ./worker/dockerfile -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+        docker build -f ./worker/dockerfile -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG ./worker
         docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
 
     # Bước 4: Build & Push con SEEDER
@@ -55,6 +54,5 @@ jobs:
         ECR_REPOSITORY: producer # Tên repo bạn tạo trên ECR
         IMAGE_TAG: latest
       run: |
-        cd producer
-        docker build -f ./producer/dockerfile -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+        docker build -f ./producer/dockerfile -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG ./producer
         docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
