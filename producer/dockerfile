@@ -1,0 +1,13 @@
+# Bước 1: Build file JAR (Dùng Maven)
+FROM maven:3.8.4-openjdk-21-slim AS build
+WORKDIR /producer
+COPY pom.xml .
+COPY src ./src
+RUN mvn clean package -DskipTests -Dstart-class=com.example.producer.SeederApplication
+
+
+FROM eclipse-temurin:21-jre-alpine
+WORKDIR /producer
+COPY --from=build /producer/target/*.jar app.ja
+ENTRYPOINT ["java", "-jar", "app.jar"]
+EXPOSE 8080
