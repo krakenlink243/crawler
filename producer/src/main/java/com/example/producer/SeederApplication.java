@@ -1,45 +1,79 @@
 package com.example.producer;
 
-import io.awspring.cloud.sqs.operations.SqsTemplate;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.CommandLineRunner;
-import org.springframework.boot.SpringApplication;
-import org.springframework.boot.autoconfigure.SpringBootApplication;
+import com.amazonaws.services.lambda.runtime.Context;
+import com.amazonaws.services.lambda.runtime.RequestHandler;
+import org.jsoup.Jsoup;
+import org.jsoup.nodes.Document;
+import org.jsoup.nodes.Element;
+import org.jsoup.select.Elements;
+import software.amazon.awssdk.regions.Region;
+import software.amazon.awssdk.services.sqs.SqsClient;
+import software.amazon.awssdk.services.sqs.model.SendMessageBatchRequest;
+import software.amazon.awssdk.services.sqs.model.SendMessageBatchRequestEntry;
 
-@SpringBootApplication
-public class SeederApplication implements CommandLineRunner {
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 
-    @Autowired
-    private SqsTemplate sqsTemplate;
+public class SeederApplication implements RequestHandler<Map<String, Object>, String> {
 
-    // Thay bằng URL của hàng đợi SQS bạn tạo trên AWS Console
-    private final String QUEUE_URL = "https://sqs.ap-southeast-2.amazonaws.com/510728439377/SQS";
-
-    // ĐÂY LÀ HÀM MAIN MÀ SPRING BOOT ĐANG TÌM KIẾM
-    public static void main(String[] args) {
-        SpringApplication.run(SeederApplication.class, args);
-    }
+    private final String QUEUE_URL = System.getenv("SQS_QUEUE_URL");
+    private final SqsClient sqsClient = SqsClient.builder()
+            .region(Region.AP_SOUTHEAST_2)
+            .build();
 
     @Override
-    public void run(String... args) {
-        System.out.println(">>> [SEEDER] Đang kết nối AWS SQS và gieo hạt...");
-        
+    public String handleRequest(Map<String, Object> input, Context context) {
+        context.getLogger().log("Bắt đầu cào từ trang 1 đến 100...");
+        int totalLinksFound = 0;
+
         try {
-            for (int i = 1; i <= 50; i++) {
-                String url = "https://books.toscrape.com/catalogue/page-" + i + ".html";
-                
-                // Bắn message thẳng lên Cloud
-                sqsTemplate.send(to -> to.queue(QUEUE_URL).payload(url));
-                
-                System.out.println("   -> Đã bơm thành công: " + url);
+            for (int i = 1; i <= 100; i++) {
+                String pageUrl = "https://books.toscrape.com/catalogue/page-" + i + ".html";
+                context.getLogger().log("Đang quét trang: " + pageUrl);
+
+                Document doc = Jsoup.connect(pageUrl).get();
+                Elements bookLinks = doc.select("h3 a");
+
+                List<SendMessageBatchRequestEntry> entries = new ArrayList<>();
+
+                for (Element link : bookLinks) {
+                    // Chuyển link tương đối thành tuyệt đối
+                    String absoluteUrl = "https://books.toscrape.com/catalogue/" + link.attr("href");
+                    
+                    // Tạo entry để gửi theo batch (tối đa 10 tin/lần để tiết kiệm request)
+                    entries.add(SendMessageBatchRequestEntry.builder()
+                            .id(UUID.randomUUID().toString())
+                            .messageBody(absoluteUrl)
+                            .build());
+
+                    if (entries.size() == 10) {
+                        sendBatch(entries);
+                        totalLinksFound += entries.size();
+                        entries.clear();
+                    }
+                }
+
+                // Gửi nốt những tin còn dư trong list
+                if (!entries.isEmpty()) {
+                    sendBatch(entries);
+                    totalLinksFound += entries.size();
+                }
             }
-            System.out.println(">>> [SEEDER] Hoàn tất 50 link! App tự động tắt để tiết kiệm tiền.");
-            
         } catch (Exception e) {
-            System.err.println(">>> [LỖI] Không thể gửi lên SQS: " + e.getMessage());
-        } finally {
-            // Đảm bảo dù thành công hay lỗi, con app này cũng tự "sát sinh" khi làm xong việc
-            System.exit(0); 
+            context.getLogger().log("Lỗi nghiêm trọng: " + e.getMessage());
+            return "Thất bại!";
         }
+
+        return "Hoàn thành! Tổng cộng đã ném " + totalLinksFound + " link vào SQS.";
+    }
+
+    private void sendBatch(List<SendMessageBatchRequestEntry> entries) {
+        SendMessageBatchRequest batchRequest = SendMessageBatchRequest.builder()
+                .queueUrl(QUEUE_URL)
+                .entries(entries)
+                .build();
+        sqsClient.sendMessageBatch(batchRequest);
     }
 }
