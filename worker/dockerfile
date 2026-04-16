@@ -1,5 +1,5 @@
 # Bước 1: Build file JAR (Dùng Maven)
-FROM maven:3.8.4-openjdk-21-slim AS build
+FROM maven:3.9.6-eclipse-temurin-21-alpine AS build
 WORKDIR /worker
 COPY pom.xml .
 COPY src ./src
