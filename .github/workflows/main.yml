@@ -56,3 +56,9 @@ jobs:
       run: |
         docker build -f ./producer/dockerfile -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG ./producer
         docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+
+    - name: Update Lambda Seeder
+      run: |
+        aws lambda update-function-code \
+          --function-name producer \
+          --image-uri ${{ steps.login-ecr.outputs.registry }}/producer:latest   
