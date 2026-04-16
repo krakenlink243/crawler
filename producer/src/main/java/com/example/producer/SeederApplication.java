@@ -29,7 +29,7 @@ public class SeederApplication implements RequestHandler<Map<String, Object>, St
         int totalLinksFound = 0;
 
         try {
-            for (int i = 1; i <= 100; i++) {
+            for (int i = 1; i <= 50; i++) {
                 String pageUrl = "https://books.toscrape.com/catalogue/page-" + i + ".html";
                 context.getLogger().log("Đang quét trang: " + pageUrl);
 
