@@ -1,8 +1,7 @@
 # Bước 1: Build file JAR (Dùng Maven)
 FROM maven:3.9.6-eclipse-temurin-21-alpine AS build
 WORKDIR /producer
-COPY pom.xml .
-COPY src ./src
+COPY . .
 RUN mvn clean package -DskipTests -Dstart-class=com.example.producer.SeederApplication
 
 
