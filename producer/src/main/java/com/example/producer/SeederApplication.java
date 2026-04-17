@@ -61,9 +61,13 @@ public class SeederApplication implements RequestHandler<Map<String, Object>, St
                     totalLinksFound += entries.size();
                 }
             }
-        } catch (Exception e) {
-            context.getLogger().log("Lỗi nghiêm trọng: " + e.getMessage());
-            return "Thất bại!";
+        } catch (Throwable t) {
+            java.io.StringWriter sw = new java.io.StringWriter();
+            java.io.PrintWriter pw = new java.io.PrintWriter(sw);
+            t.printStackTrace(pw);
+        
+        // Trả thẳng nó ra màn hình Test cho ông xem!
+            return "LỖI LÙ LÙ ĐÂY NÀY: \n" + sw.toString();
         }
 
         return "Hoàn thành! Tổng cộng đã ném " + totalLinksFound + " link vào SQS.";
