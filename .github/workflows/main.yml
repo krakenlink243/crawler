@@ -47,18 +47,18 @@ jobs:
         docker build -f ./worker/dockerfile -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG ./worker
         docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
 
-    # Bước 4: Build & Push con SEEDER
-    - name: Build, tag, and push Seeder image
-      env:
-        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-        ECR_REPOSITORY: producer # Tên repo bạn tạo trên ECR
-        IMAGE_TAG: latest
-      run: |
-        docker build -f ./producer/dockerfile -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG ./producer
-        docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+    # # Bước 4: Build & Push con SEEDER
+    # - name: Build, tag, and push Seeder image
+    #   env:
+    #     ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+    #     ECR_REPOSITORY: producer # Tên repo bạn tạo trên ECR
+    #     IMAGE_TAG: latest
+    #   run: |
+    #     docker build -f ./producer/dockerfile -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG ./producer
+    #     docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
 
-    - name: Update Lambda Seeder
-      run: |
-        aws lambda update-function-code \
-          --function-name producer \
-          --image-uri ${{ steps.login-ecr.outputs.registry }}/producer:latest   
+    # - name: Update Lambda Seeder
+    #   run: |
+    #     aws lambda update-function-code \
+    #       --function-name producer \
+    #       --image-uri ${{ steps.login-ecr.outputs.registry }}/producer:latest   
