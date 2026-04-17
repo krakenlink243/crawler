@@ -1,12 +1,16 @@
-# Bước 1: Build file JAR (Dùng Maven)
+# --- Bước 1: Build bằng Maven với Java 21 ---
 FROM maven:3.9.6-eclipse-temurin-21-alpine AS build
 WORKDIR /app
 COPY . .
-RUN mvn clean package -DskipTests -Dstart-class=com.example.worker.WorkerApplication
+# Chạy build tạo Fat Jar
+RUN mvn clean package -DskipTests
 
+# --- Bước 2: Runtime dùng Image chuẩn AWS Lambda cho Java 21 ---
+FROM public.ecr.aws/lambda/java:21
 
-FROM eclipse-temurin:21-jre-alpine
-WORKDIR /app
-COPY --from=build /app/target/*.jar app.ja
-ENTRYPOINT ["java", "-jar", "app.jar"]
-EXPOSE 8080
+# 1. Copy file JAR từ bước build vào thư mục lib của Lambda
+# Kiểm tra kỹ tên file jar trong folder target/ sau khi build nhé
+COPY --from=build /app/target/*.jar ${LAMBDA_TASK_ROOT}/lib/
+
+# 2. Handler: [package].[Class]::[Method]
+CMD [ "com.example.worker.WorkerApplication::handleRequest" ]
