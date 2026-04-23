@@ -38,15 +38,23 @@ jobs:
     # Bước 2: TRƯỚC KHI BUILD - Đưa bản đang chạy hiện tại thành tag 'stable' để dự phòng
     - name: Backup current latest to stable
       run: |
-        # Backup Worker
-        docker pull ${{ steps.login-ecr.outputs.registry }}/worker:latest || echo "First deploy, no stable yet"
-        docker tag ${{ steps.login-ecr.outputs.registry }}/worker:latest ${{ steps.login-ecr.outputs.registry }}/worker:stable || echo "First deploy"
-        docker push ${{ steps.login-ecr.outputs.registry }}/worker:stable || echo "First deploy"
+        # Backup Worker (Chỉ chạy nếu có bản latest sẵn)
+        MANIFEST=$(aws ecr batch-get-image --repository-name worker --image-ids imageTag=latest --query 'images[].imageManifest' --output text)
+        if [ "$MANIFEST" != "" ] && [ "$MANIFEST" != "None" ]; then
+          aws ecr put-image --repository-name worker --image-tag stable --image-manifest "$MANIFEST"
+          echo "✅ Đã backup Worker sang stable"
+        else
+          echo "⏩ Chưa có bản latest, bỏ qua backup"
+        fi
         
         # Backup Producer
-        docker pull ${{ steps.login-ecr.outputs.registry }}/producer:latest || echo "First deploy"
-        docker tag ${{ steps.login-ecr.outputs.registry }}/producer:latest ${{ steps.login-ecr.outputs.registry }}/producer:stable || echo "First deploy"
-        docker push ${{ steps.login-ecr.outputs.registry }}/producer:stable || echo "First deploy"
+        MANIFEST_P=$(aws ecr batch-get-image --repository-name producer --image-ids imageTag=latest --query 'images[].imageManifest' --output text)
+        if [ "$MANIFEST_P" != "" ] && [ "$MANIFEST_P" != "None" ]; then
+          aws ecr put-image --repository-name producer --image-tag stable --image-manifest "$MANIFEST_P"
+          echo "✅ Đã backup Producer sang stable"
+        else
+          echo "⏩ Chưa có bản latest, bỏ qua backup"
+        fi
 
     # Bước 3: Build & Push bản LATEST mới (Worker)
     - name: Build and push Worker latest
