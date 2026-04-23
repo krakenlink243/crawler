@@ -2,18 +2,14 @@ package com.example.worker;
 
 import com.amazonaws.services.lambda.runtime.Context;
 import com.amazonaws.services.lambda.runtime.RequestHandler;
-import com.amazonaws.services.lambda.runtime.events.SQSEvent;
-import com.amazonaws.services.lambda.runtime.events.SQSEvent.SQSMessage;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 
-import java.sql.Connection;
-import java.sql.DriverManager;
-import java.sql.PreparedStatement;
-import java.sql.Statement;
-import java.sql.SQLException;
+import java.sql.*;
+import java.util.List;
+import java.util.Map;
 
-public class WorkerApplication implements RequestHandler<SQSEvent, String> {
+public class WorkerApplication implements RequestHandler<Map<String, Object>, String> {
 
     private static final String DB_URL = System.getenv("DB_URL");
     private static final String DB_USER = System.getenv("DB_USER");
@@ -22,18 +18,24 @@ public class WorkerApplication implements RequestHandler<SQSEvent, String> {
     private static boolean isTableInitialized = false;
 
     @Override
-    public String handleRequest(SQSEvent event, Context context) {
-        // 1. LOG ĐẦU TIÊN: ĐỂ BIẾT LÀ CODE ĐÃ CHẠY VÀO ĐÂY
-        context.getLogger().log(">>> LAMBDA START: Nhan duoc " + (event.getRecords() != null ? event.getRecords().size() : 0) + " tin nhan.");
+    public String handleRequest(Map<String, Object> input, Context context) {
+        // --- 1. CHẶN ĐẦU: KHÁM SỨC KHỎE ---
+        if (input != null && "health_check".equals(input.get("action"))) {
+            context.getLogger().log(">>> WORKER PING: Nhan lenh health check. Tra ve OK_ALIVE.");
+            return "OK_ALIVE";
+        }
 
-        if (event.getRecords() == null || event.getRecords().isEmpty()) {
+        // --- 2. LOG ĐẦU TIÊN: ĐỂ BIẾT LÀ CODE ĐÃ CHẠY VÀO ĐÂY ---
+        List<Map<String, Object>> records = (List<Map<String, Object>>) input.get("Records");
+        context.getLogger().log(">>> LAMBDA START: Nhan duoc " + (records != null ? records.size() : 0) + " tin nhan.");
+
+        if (records == null || records.isEmpty()) {
             return "Event trong rong";
         }
 
         try (Connection conn = DriverManager.getConnection(DB_URL, DB_USER, DB_PASS)) {
             context.getLogger().log(">>> DB CONNECTED: Ket noi thanh cong toi " + DB_URL);
 
-            // 2. Kiểm tra/Tạo bảng
             if (!isTableInitialized) {
                 String createTableSql = "CREATE TABLE IF NOT EXISTS books (" +
                         "id SERIAL PRIMARY KEY, title VARCHAR(500), price VARCHAR(50), " +
@@ -45,13 +47,13 @@ public class WorkerApplication implements RequestHandler<SQSEvent, String> {
                 }
             }
 
-            // 3. Xử lý từng Record
             String sql = "INSERT INTO books (title, price, stock, url) VALUES (?, ?, ?, ?) " +
                          "ON CONFLICT (url) DO UPDATE SET price = EXCLUDED.price, stock = EXCLUDED.stock;";
 
             try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
-                for (SQSMessage msg : event.getRecords()) {
-                    String bookUrl = msg.getBody();
+                for (Map<String, Object> msg : records) {
+                    // Bóc tách body từ Map SQS Record
+                    String bookUrl = (String) msg.get("body");
                     context.getLogger().log(">>> PROCESSING: Dang cao link: " + bookUrl);
 
                     try {

@@ -20,12 +20,23 @@ public class SeederApplication implements RequestHandler<Map<String, Object>, St
 
     private final String QUEUE_URL = System.getenv("SQS_QUEUE_URL");
     private final SqsClient sqsClient = SqsClient.builder()
-            .region(Region.AP_SOUTHEAST_2)
+            .region(Region.AP_SOUTHEAST_2) // Giữ nguyên region gốc của ông
             .build();
 
     @Override
     public String handleRequest(Map<String, Object> input, Context context) {
-        context.getLogger().log("Bắt đầu cào từ trang 1 đến 100...");
+        // ---------------------------------------------------------
+        // 1. CHẶN ĐẦU: Kiểm tra Health Check từ CI/CD
+        // ---------------------------------------------------------
+        if (input != null && "health_check".equals(input.get("action"))) {
+            context.getLogger().log(">>> CI/CD PING: Nhận lệnh khám sức khỏe. Đang trả về OK_ALIVE...");
+            return "OK_ALIVE";
+        }
+
+        // ---------------------------------------------------------
+        // 2. NGƯỢC LẠI: Chạy logic cào web bình thường
+        // ---------------------------------------------------------
+        context.getLogger().log("Bắt đầu cào từ trang 1 đến 50...");
         int totalLinksFound = 0;
 
         try {
@@ -65,8 +76,8 @@ public class SeederApplication implements RequestHandler<Map<String, Object>, St
             java.io.StringWriter sw = new java.io.StringWriter();
             java.io.PrintWriter pw = new java.io.PrintWriter(sw);
             t.printStackTrace(pw);
-        
-        // Trả thẳng nó ra màn hình Test cho ông xem!
+            
+            // Trả thẳng nó ra màn hình Test cho ông xem!
             return "LỖI LÙ LÙ ĐÂY NÀY: \n" + sw.toString();
         }
 

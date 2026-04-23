@@ -1,4 +1,4 @@
-package com.example.worker; // Kiểm tra lại tên package của ông cho đúng
+package com.example.worker;
 
 import com.amazonaws.services.lambda.runtime.Context;
 import com.amazonaws.services.lambda.runtime.RequestHandler;
@@ -14,20 +14,23 @@ public class ApiHandler implements RequestHandler<Map<String, Object>, Map<Strin
     private static final String DB_USER = System.getenv("DB_USER");
     private static final String DB_PASS = System.getenv("DB_PASS");
     
-    // PrettyPrinting giúp JSON trả về có xuống dòng, thụt lề cho đẹp
     private final Gson gson = new GsonBuilder().setPrettyPrinting().create();
 
     @Override
     public Map<String, Object> handleRequest(Map<String, Object> input, Context context) {
+        // --- 1. CHỐT CHẶN HEALTH CHECK QUA URL ---
+        String path = (String) input.getOrDefault("rawPath", "/");
+        if ("/health".equals(path)) {
+            context.getLogger().log(">>> API PING: He thong dang goi /health");
+            return createResponse(200, Map.of("status", "API_ALIVE_AND_KICKING"));
+        }
+
         context.getLogger().log(">>> API Lambda: Dang lay du lieu cho ong giao...");
-        
         List<Map<String, String>> books = new ArrayList<>();
 
         try {
-            // 1. Phải có dòng này để Java nhận diện Driver trong môi trường Lambda
             Class.forName("org.postgresql.Driver");
 
-            // 2. Kết nối và lấy 50 cuốn sách mới nhất
             try (Connection conn = DriverManager.getConnection(DB_URL, DB_USER, DB_PASS);
                  Statement stmt = conn.createStatement();
                  ResultSet rs = stmt.executeQuery("SELECT * FROM books ORDER BY id DESC LIMIT 50")) {
@@ -50,14 +53,13 @@ public class ApiHandler implements RequestHandler<Map<String, Object>, Map<Strin
         return createResponse(200, books);
     }
 
-    // Hàm phụ để đóng gói Response chuẩn HTTP cho Function URL
     private Map<String, Object> createResponse(int statusCode, Object body) {
         Map<String, Object> response = new HashMap<>();
         response.put("statusCode", statusCode);
         
         Map<String, String> headers = new HashMap<>();
         headers.put("Content-Type", "application/json; charset=utf-8");
-        headers.put("Access-Control-Allow-Origin", "*"); // Cho phép gọi API từ bất cứ đâu
+        headers.put("Access-Control-Allow-Origin", "*"); 
         
         response.put("headers", headers);
         response.put("body", gson.toJson(body));

@@ -1,17 +1,16 @@
-name: Deploy to AWS ECR (OIDC)
+name: Deploy to AWS ECR (OIDC) with Auto Rollback
 
 on:
   push:
-    branches: [ "main" ] # Chỉ chạy khi push vào nhánh main
+    branches: [ "main" ]
 
-# QUAN TRỌNG: Cấp quyền để lấy Token từ AWS qua OIDC
 permissions:
   id-token: write
   contents: read
 
 jobs:
   deploy:
-    name: Build and Push
+    name: Build, Push and Health Check
     runs-on: ubuntu-latest
 
     steps:
@@ -25,52 +24,73 @@ jobs:
         distribution: 'temurin'
         cache: maven
 
-    # Bước 1: Kết nối AWS bằng OIDC (Thay thế Access Key)
+    # Bước 1: Kết nối AWS bằng OIDC
     - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v4
       with:
-        role-to-assume: arn:aws:iam::510728439377:role/gh-action-crawler-role # THAY ARN CỦA BẠN VÀO ĐÂY
+        role-to-assume: arn:aws:iam::510728439377:role/gh-action-crawler-role
         aws-region: ap-southeast-2
 
-    # Bước 2: Đăng nhập vào kho ECR
     - name: Login to Amazon ECR
       id: login-ecr
       uses: aws-actions/amazon-ecr-login@v2
 
-    # Bước 3: Build & Push con WORKER
-    - name: Build, tag, and push Worker image
-      env:
-        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-        ECR_REPOSITORY: worker # Tên repo bạn tạo trên ECR
-        IMAGE_TAG: latest
+    # Bước 2: TRƯỚC KHI BUILD - Đưa bản đang chạy hiện tại thành tag 'stable' để dự phòng
+    - name: Backup current latest to stable
       run: |
-        docker build -f ./worker/dockerfile -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG ./worker
-        docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+        # Backup Worker
+        docker pull ${{ steps.login-ecr.outputs.registry }}/worker:latest || echo "First deploy, no stable yet"
+        docker tag ${{ steps.login-ecr.outputs.registry }}/worker:latest ${{ steps.login-ecr.outputs.registry }}/worker:stable || echo "First deploy"
+        docker push ${{ steps.login-ecr.outputs.registry }}/worker:stable || echo "First deploy"
+        
+        # Backup Producer
+        docker pull ${{ steps.login-ecr.outputs.registry }}/producer:latest || echo "First deploy"
+        docker tag ${{ steps.login-ecr.outputs.registry }}/producer:latest ${{ steps.login-ecr.outputs.registry }}/producer:stable || echo "First deploy"
+        docker push ${{ steps.login-ecr.outputs.registry }}/producer:stable || echo "First deploy"
 
-    # Bước 4: Build & Push con SEEDER
-    - name: Build, tag, and push Seeder image
-      env:
-        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-        ECR_REPOSITORY: producer # Tên repo bạn tạo trên ECR
-        IMAGE_TAG: latest
+    # Bước 3: Build & Push bản LATEST mới (Worker)
+    - name: Build and push Worker latest
       run: |
-        docker build -f ./producer/dockerfile -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG ./producer
-        docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+        docker build -f ./worker/dockerfile -t ${{ steps.login-ecr.outputs.registry }}/worker:latest ./worker
+        docker push ${{ steps.login-ecr.outputs.registry }}/worker:latest
 
-    - name: Update Lambda Seeder
+    # Bước 4: Build & Push bản LATEST mới (Producer)
+    - name: Build and push Producer latest
       run: |
-        aws lambda update-function-code \
-          --function-name producer \
-          --image-uri ${{ steps.login-ecr.outputs.registry }}/producer:latest   
+        docker build -f ./producer/dockerfile -t ${{ steps.login-ecr.outputs.registry }}/producer:latest ./producer
+        docker push ${{ steps.login-ecr.outputs.registry }}/producer:latest
 
-    - name: Update Lambda Worker
+    # Bước 5: Cập nhật Lambda lên bản mới nhất
+    - name: Update Lambda Functions to Latest
       run: |
-        aws lambda update-function-code \
-          --function-name worker \
-          --image-uri ${{ steps.login-ecr.outputs.registry }}/worker:latest
+        aws lambda update-function-code --function-name producer --image-uri ${{ steps.login-ecr.outputs.registry }}/producer:latest
+        aws lambda update-function-code --function-name worker --image-uri ${{ steps.login-ecr.outputs.registry }}/worker:latest
+        aws lambda update-function-code --function-name api --image-uri ${{ steps.login-ecr.outputs.registry }}/worker:latest
+        echo "Đợi 20s cho Lambda ổn định..."
+        sleep 20
 
-    - name: Update Lambda API
+    # Bước 6: KHÁM SỨC KHỎE (HEALTH CHECK)
+    - name: Health Check All Components
+      id: health_check
       run: |
-        aws lambda update-function-code \
-          --function-name api \
-          --image-uri ${{ steps.login-ecr.outputs.registry }}/worker:latest
+        echo "Check API qua Function URL..."
+        # Thay link Function URL thật của ông vào đây
+        curl -f https://x5aaejkyau6ptzmrp6ayswnm340foqed.lambda-url.ap-southeast-2.on.aws/ || exit 1
+
+        echo "Check Producer..."
+        aws lambda invoke --function-name producer --payload '{"action": "health_check"}' --cli-binary-format raw-in-base64-out out_p.json
+        grep -q "OK_ALIVE" out_p.json || exit 1
+
+        echo "Check Worker..."
+        aws lambda invoke --function-name worker --payload '{"action": "health_check"}' --cli-binary-format raw-in-base64-out out_w.json
+        grep -q "OK_ALIVE" out_w.json || exit 1
+
+    # Bước 7: TỰ ĐỘNG ROLLBACK (Chỉ chạy khi Bước 6 bị FAIL)
+    - name: ⚠️ AUTOMATIC ROLLBACK
+      if: failure()
+      run: |
+        echo "Phát hiện lỗi! Đang khẩn cấp quay xe về bản STABLE..."
+        aws lambda update-function-code --function-name producer --image-uri ${{ steps.login-ecr.outputs.registry }}/producer:stable
+        aws lambda update-function-code --function-name worker --image-uri ${{ steps.login-ecr.outputs.registry }}/worker:stable
+        aws lambda update-function-code --function-name api --image-uri ${{ steps.login-ecr.outputs.registry }}/worker:stable
+        echo "✅ Rollback thành công. Hệ thống đã an toàn."
