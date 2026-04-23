@@ -10,7 +10,7 @@ import java.util.Map;
 
 public class WorkerApplication implements RequestHandler<Map<String, Object>, String> {
 
-    private static final String DB_URL = System.getenv("DB_URL");
+    private static final String DB_URL = System.getenv("123123");
     private static final String DB_USER = System.getenv("DB_USER");
     private static final String DB_PASS = System.getenv("DB_PASS");
     private static boolean isTableInitialized = false;
